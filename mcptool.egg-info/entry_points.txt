@@ -1,0 +1,3 @@
+[console_scripts]
+mcptool-inspect = mcptool.inspect:main
+mcptool-server = mcptool.server:main
