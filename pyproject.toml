@@ -53,9 +53,9 @@ load-test = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/example/mcptool"
-Documentation = "https://github.com/example/mcptool#readme"
-Repository = "https://github.com/example/mcptool.git"
+Homepage = "https://github.com/sujaychandrakoyyalamudi/MCPTool"
+Documentation = "https://github.com/sujaychandrakoyyalamudi/MCPTool#readme"
+Repository = "https://github.com/sujaychandrakoyyalamudi/MCPTool.git"
 
 [project.scripts]
 mcptool-server = "mcptool.server:main"
