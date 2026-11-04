@@ -380,24 +380,25 @@ def main():
     
     server = create_example_server()
     
-    print("Example MCP Server")
-    print("==================")
-    print(f"Server name: {server.name}")
-    print(f"Version: {server.version}")
-    print(f"Transport: {server.config.transport}")
-    print()
-    print("Available tools:")
+    # The banner goes to stderr: stdout is reserved for JSON-RPC messages.
+    print("Example MCP Server", file=sys.stderr)
+    print("==================", file=sys.stderr)
+    print(f"Server name: {server.name}", file=sys.stderr)
+    print(f"Version: {server.version}", file=sys.stderr)
+    print(f"Transport: {server.config.transport}", file=sys.stderr)
+    print(file=sys.stderr)
+    print("Available tools:", file=sys.stderr)
     for tool_name, tool_def in server._tools.items():
-        print(f"  - {tool_name}: {tool_def.description[:60]}...")
-    print()
-    print("Starting server with stdio transport...")
-    print("(Press Ctrl+C to stop)")
-    print()
+        print(f"  - {tool_name}: {tool_def.description[:60]}...", file=sys.stderr)
+    print(file=sys.stderr)
+    print("Starting server with stdio transport...", file=sys.stderr)
+    print("(Press Ctrl+C to stop)", file=sys.stderr)
+    print(file=sys.stderr)
     
     try:
         asyncio.run(server.run_stdio())
     except KeyboardInterrupt:
-        print("\nServer stopped.")
+        print("\nServer stopped.", file=sys.stderr)
         sys.exit(0)
 
 

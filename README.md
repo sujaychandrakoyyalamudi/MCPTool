@@ -2,11 +2,11 @@
 
 MCPTool is a Python implementation of a [Model Context Protocol](https://modelcontextprotocol.io) (MCP) tool server that serves async Python functions to MCP clients as tools over stdio, using JSON-RPC 2.0.
 
-Status: early-stage. Unit tests cover the request handlers; the stdio loop, the example tools, and the LangChain adapter are untested.
+Status: early-stage. Unit tests cover the request handlers, and one end-to-end test runs the example server over stdio with the `calculate` tool. The other example tools and the LangChain adapter are untested.
 
 ## What it does
 
-You register async functions with the `@server.tool()` decorator. MCPTool builds a JSON Schema for each function's arguments, and `MCPServer.run_stdio()` reads one JSON-RPC message per line from stdin and writes responses to stdout.
+You register async functions with the `@server.tool()` decorator. MCPTool builds a JSON Schema for each function's arguments, and `MCPServer.run_stdio()` reads one JSON-RPC message per line from stdin and writes responses to stdout. Logs go to stderr, so stdout carries only JSON-RPC messages.
 
 | Message | Behavior |
 | --- | --- |
@@ -23,7 +23,7 @@ You register async functions with the `@server.tool()` decorator. MCPTool builds
 - **Argument validation.** `tools/call` checks arguments against the input schema before the tool runs and returns failures as `isError` results.
 - **Structured results.** `ToolResult.success()` sets `structuredContent` plus a text block (your `text_fallback`, or the JSON-encoded data). `ToolResult.error()` and a raised `ToolError` produce `isError: true`.
 - **Risk labels and audit events.** Each tool has a free-form `risk_tier` (default `read_only`) and a `requires_approval` flag. When a tool whose tier is not `read_only` returns, the server logs a `tool_call_audit` event with the tier, a SHA-256 hash of the arguments, the latency, and the result status.
-- **Structured logging.** `setup_logging()` configures structlog for JSON or console output with ISO timestamps. `run_stdio()` uses the console format.
+- **Structured logging.** `setup_logging()` configures structlog for JSON or console output on stderr, with ISO timestamps. `run_stdio()` uses the console format.
 - **Example server.** `mcptool/examples.py` defines five demo tools (see below).
 
 ## Install
@@ -70,14 +70,14 @@ printf '%s\n' \
   '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"cli","version":"0"}}}' \
   '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
   '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"add","arguments":{"a":2,"b":3}}}' \
-  | python my_server.py | grep '"jsonrpc"'
+  | python my_server.py
 ```
 
-The second response contains `"structuredContent": {"sum": 5}`. The `grep` filters out the log lines that the server also writes to stdout.
+The server writes only the two JSON-RPC responses to stdout, and the second contains `"structuredContent": {"sum": 5}`. The log lines around them go to stderr. Add `2>/dev/null` to hide them.
 
 ### Example server
 
-`python -m mcptool.examples` prints a banner, then serves these tools over stdio:
+`python -m mcptool.examples` prints a banner to stderr, then serves these tools over stdio:
 
 | Tool | Behavior |
 | --- | --- |
@@ -111,7 +111,6 @@ Boolean variables accept `true`, `1`, `yes`, or `on` (any case); other values me
 - There is no authentication or authorization. Use the server only with local, trusted clients.
 - `risk_tier` and `requires_approval` are labels. Nothing blocks a tool or asks for approval before it runs, and audit events always report approval status `not_required`.
 - Audit events are ordinary log lines on the same stream as other logs, with no tamper protection. Calls that fail validation or raise an exception are not audited.
-- MCPTool writes its logs to stdout, and the example server prints its banner there too. MCP clients expect only JSON-RPC messages on stdout, so these lines can cause parse errors in clients.
 - The stdio loop handles one message at a time, so a slow tool blocks the server. There are no timeouts or concurrency limits. A JSON-RPC batch (a JSON array) raises an exception that stops the server.
 - Validation uses the `jsonschema` package when it can be imported. It is not a declared dependency; without it, only required fields and top-level types are checked. Tool output is not validated against `outputSchema`.
 - Signature-based schemas map only `str`, `int`, `float`, `bool`, and `list`. Other annotations, such as `List[str]` or `dict`, become `"string"`.
@@ -133,7 +132,7 @@ mcptool/
 ├── langchain_integration.py  # LangChain adapter (not working yet)
 └── examples.py               # Example server with five demo tools
 tests/
-└── test_server.py            # pytest suite (18 tests)
+└── test_server.py            # pytest suite (21 tests)
 pyproject.toml                # Packaging metadata, extras, pytest settings
 ```
 
@@ -148,7 +147,7 @@ pip install -e ".[dev]"
 pytest tests/test_server.py
 ```
 
-`pyproject.toml` adds `-v --cov=mcptool --cov-report=term-missing` to every run, so `pytest-cov` from the `dev` extra is required. The 18 tests cover initialization, tool registration, `tools/list`, `tools/call` (success, unknown tool, invalid arguments), `ToolResult`, JSON-RPC error codes, and `ServerConfig`.
+`pyproject.toml` adds `-v --cov=mcptool --cov-report=term-missing` to every run, so `pytest-cov` from the `dev` extra is required. The 21 tests cover initialization, tool registration, `tools/list`, `tools/call` (success, unknown tool, invalid arguments), `ToolResult`, JSON-RPC error codes, and `ServerConfig`. Three of them start subprocesses to check that the example server writes only JSON-RPC to stdout and that `setup_logging()` sends logs to stderr in both formats.
 
 ## Roadmap (not implemented yet)
 
