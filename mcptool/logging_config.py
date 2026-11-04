@@ -6,6 +6,13 @@ from typing import Any, Dict, Optional
 
 import structlog
 
+# MCP stdio clients read JSON-RPC messages from stdout, so logs must go to stderr.
+# Tools log when they are registered, before run_stdio() calls setup_logging(),
+# and structlog's defaults print to stdout. Redirect those defaults to stderr
+# unless the application has already configured structlog.
+if not structlog.is_configured():
+    structlog.configure(logger_factory=structlog.PrintLoggerFactory(file=sys.stderr))
+
 
 def setup_logging(
     level: str = "INFO",
@@ -20,18 +27,19 @@ def setup_logging(
         service_name: Service name to include in log records
     
     This configures both standard library logging and structlog for consistent
-    structured logging across the application.
+    structured logging across the application. Both write to stderr, because
+    stdio clients read JSON-RPC messages from stdout.
     """
     # Configure standard library logging
     log_level = getattr(logging, level.upper(), logging.INFO)
     
     if format_type == "json":
         # JSON formatter for production
-        handler = logging.StreamHandler(sys.stdout)
+        handler = logging.StreamHandler(sys.stderr)
         handler.setFormatter(logging.Formatter("%(message)s"))
     else:
         # Console formatter for development
-        handler = logging.StreamHandler(sys.stdout)
+        handler = logging.StreamHandler(sys.stderr)
         handler.setFormatter(logging.Formatter(
             "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
         ))
@@ -58,7 +66,7 @@ def setup_logging(
         processors=processors,
         wrapper_class=structlog.make_filtering_bound_logger(log_level),
         context_class=dict,
-        logger_factory=structlog.PrintLoggerFactory(),
+        logger_factory=structlog.PrintLoggerFactory(file=sys.stderr),
         cache_logger_on_first_use=True,
     )
     

@@ -2,12 +2,18 @@
 
 import asyncio
 import json
+import os
+import subprocess
+import sys
 import pytest
+from pathlib import Path
 from typing import Dict, Any
 
 from mcptool.server import MCPServer, ToolContext
 from mcptool.tool import ToolResult, ToolError, ToolDefinition
 from mcptool.config import ServerConfig
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.fixture
@@ -373,6 +379,88 @@ class TestServerConfig:
         config = ServerConfig(enable_auth=True)
         with pytest.raises(ValueError, match="auth_issuer is required"):
             config.validate()
+
+
+class TestStdioOutput:
+    """Test that stdout carries only JSON-RPC messages and logs go to stderr."""
+
+    def test_example_server_stdout_is_only_jsonrpc(self) -> None:
+        """Run the example server over stdio and parse every stdout line."""
+        requests = [
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-11-25",
+                    "capabilities": {},
+                    "clientInfo": {"name": "test-client", "version": "1.0.0"},
+                },
+            },
+            {"jsonrpc": "2.0", "method": "notifications/initialized"},
+            {
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/call",
+                "params": {"name": "calculate", "arguments": {"expression": "2 + 3"}},
+            },
+        ]
+
+        proc = subprocess.run(
+            [sys.executable, "-m", "mcptool.examples"],
+            input="".join(json.dumps(request) + "\n" for request in requests),
+            capture_output=True,
+            text=True,
+            timeout=30,
+            cwd=REPO_ROOT,
+            env={**os.environ, "MCPTOOL_LOG_LEVEL": "INFO"},
+        )
+
+        assert proc.returncode == 0, proc.stderr
+
+        responses = []
+        for line in proc.stdout.splitlines():
+            try:
+                responses.append(json.loads(line))
+            except json.JSONDecodeError:
+                pytest.fail(f"stdout line is not JSON-RPC: {line!r}")
+
+        assert all(response["jsonrpc"] == "2.0" for response in responses)
+        assert [response["id"] for response in responses] == [1, 2]
+        assert responses[1]["result"]["structuredContent"] == {
+            "expression": "2 + 3",
+            "result": 5,
+        }
+
+        # The banner, registration logs, and request logs all go to stderr.
+        assert "Example MCP Server" in proc.stderr
+        assert "tool_registered" in proc.stderr
+        assert "server_starting" in proc.stderr
+        assert "tool_call_completed" in proc.stderr
+
+    @pytest.mark.parametrize("format_type", ["json", "console"])
+    def test_setup_logging_writes_to_stderr(self, format_type: str) -> None:
+        """Test that structlog and standard library logs go to stderr."""
+        script = (
+            "import logging, sys, structlog\n"
+            "from mcptool.logging_config import setup_logging\n"
+            "setup_logging(format_type=sys.argv[1])\n"
+            "structlog.get_logger('test').info('structlog_message')\n"
+            "logging.getLogger('test').info('stdlib_message')\n"
+        )
+
+        proc = subprocess.run(
+            [sys.executable, "-c", script, format_type],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            cwd=REPO_ROOT,
+        )
+
+        assert proc.returncode == 0, proc.stderr
+        assert proc.stdout == ""
+        assert "structlog_message" in proc.stderr
+        assert "stdlib_message" in proc.stderr
 
 
 if __name__ == "__main__":
